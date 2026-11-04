@@ -106,6 +106,8 @@ Route::prefix('v1')->group(function () {
         Route::put('admin/knowledge-documents/{knowledgeDocument}', [AdminKnowledgeController::class, 'update']);
         Route::put('admin/knowledge-documents/{knowledgeDocument}/review', [AdminKnowledgeController::class, 'review']);
         Route::get('admin/members', [AdminMemberController::class, 'index']);
+        Route::get('admin/members/{member}', [AdminMemberController::class, 'show']);
+        Route::post('admin/members/{member}/tokens', [AdminMemberController::class, 'addTokens']);
         Route::get('admin/partners', [AdminPartnerController::class, 'index']);
         Route::post('admin/partners', [AdminPartnerController::class, 'store']);
         Route::get('admin/roles', [AdminRoleController::class, 'index']);
