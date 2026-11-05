@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Support\AdminPermissions;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Role extends Model
 {
@@ -21,6 +22,12 @@ class Role extends Model
             'is_system' => 'boolean',
             'permissions' => 'array',
         ];
+    }
+
+    /** Staff accounts that have this role. */
+    public function accounts(): HasMany
+    {
+        return $this->hasMany(AdminUser::class);
     }
 
     public function allows(string $key): bool

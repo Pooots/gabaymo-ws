@@ -62,6 +62,7 @@ Route::prefix('v1')->group(function () {
 
     Route::post('register', [MemberAuthController::class, 'register']);
     Route::post('login', [MemberAuthController::class, 'login']);
+    Route::get('session', [MemberAuthController::class, 'session']);
 
     Route::middleware('member')->group(function () {
         Route::get('me', [MemberAuthController::class, 'me']);

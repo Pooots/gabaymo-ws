@@ -110,8 +110,8 @@ class MemberTicketController extends Controller
             'body' => $message->body,
             'created_at' => $message->created_at?->toIso8601String(),
             'mine' => (int) $message->user_id === (int) $request->user()->id,
-            'sender_name' => ($message->user?->role === 'partner') ? 'Gabaymo Partner' : 'You',
-            'sender_role' => $message->user?->role === 'partner' ? 'partner' : 'member',
+            'sender_name' => $message->user?->isPartner() ? 'Gabaymo Partner' : 'You',
+            'sender_role' => $message->user?->isPartner() ? 'partner' : 'member',
         ];
     }
 

@@ -2,19 +2,21 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Role;
 use App\Models\SubscriptionPlan;
 use App\Models\User;
 use App\Support\PhilippineRegions;
+use App\Support\SpaSession;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
 class MemberAuthController extends Controller
 {
     public function register(Request $request)
     {
+        SpaSession::requireSession($request);
+
         $data = $request->validate([
             'first_name' => ['required', 'string', 'max:80'],
             'last_name' => ['required', 'string', 'max:80'],
@@ -42,15 +44,13 @@ class MemberAuthController extends Controller
             'region' => $data['region'],
             'email' => $data['email'],
             'password' => $data['password'],
-            'role' => 'member',
-            'type' => 'Users',
+            'account_type' => User::CUSTOMER,
             'subscription_plan_id' => $plan?->id,
             'tokens_remaining' => $plan?->tokens ?? 0,
             'email_verified_at' => now(),
         ]);
 
-        $plain = $this->issueToken($user);
-        $request->setUserResolver(static fn () => $user);
+        SpaSession::login($request, 'web', $user);
         AdminOverviewController::record(
             $request,
             'member.register',
@@ -58,29 +58,24 @@ class MemberAuthController extends Controller
         );
 
         return response()->json([
-            'token' => $plain,
+            'portal' => SpaSession::portal($user),
             'user' => $this->profile($user->load('subscriptionPlan')),
         ], 201);
     }
 
     public function login(Request $request)
     {
+        SpaSession::requireSession($request);
+
         $credentials = $request->validate([
             'email' => ['required', 'email'],
             'password' => ['required', 'string'],
         ]);
 
+        // Staff accounts live in admin_users, so they are never found here.
         $user = User::query()->where('email', $credentials['email'])->first();
-        $staff = $user ? Role::query()->where('slug', $user->role)->exists() : false;
-
-        if ($user && $staff) {
-            return response()->json([
-                'message' => 'This account signs in on the admin page.',
-            ], 422);
-        }
-
-        $partner = $user && ($user->role === 'partner' || $user->type === 'partners');
-        $member = $user && $user->role === 'member';
+        $partner = $user && $user->isPartner();
+        $member = $user && $user->isCustomer();
 
         if ($partner && $user->partner_status !== 'active') {
             return response()->json([
@@ -94,10 +89,33 @@ class MemberAuthController extends Controller
             ], 422);
         }
 
-        $plain = $this->issueToken($user);
+        SpaSession::login($request, 'web', $user);
 
         return response()->json([
-            'token' => $plain,
+            'portal' => SpaSession::portal($user),
+            'user' => $this->profile($user->load('subscriptionPlan')),
+        ]);
+    }
+
+    /**
+     * Who is signed in on the customer/partner session, for the frontend
+     * route guards and the shared /login redirect. 401 when nobody is.
+     */
+    public function session(Request $request)
+    {
+        $user = Auth::guard('web')->user();
+        $active = $user instanceof User
+            && ($user->isCustomer() || ($user->isPartner() && $user->partner_status === 'active'));
+
+        if (! $active) {
+            return response()->json([
+                'message' => 'Unauthenticated.',
+                'error' => 'Authentication required',
+            ], 401);
+        }
+
+        return response()->json([
+            'portal' => SpaSession::portal($user),
             'user' => $this->profile($user->load('subscriptionPlan')),
         ]);
     }
@@ -125,17 +143,9 @@ class MemberAuthController extends Controller
 
     public function logout(Request $request)
     {
-        $request->user()?->forceFill(['api_token' => null])->save();
+        SpaSession::logout($request, 'web');
 
         return response()->json(['ok' => true]);
-    }
-
-    private function issueToken(User $user): string
-    {
-        $plain = Str::random(64);
-        $user->forceFill(['api_token' => hash('sha256', $plain)])->save();
-
-        return $plain;
     }
 
     private function profile(User $user): array
@@ -148,7 +158,7 @@ class MemberAuthController extends Controller
             'mobile' => $user->mobile,
             'region' => $user->region,
             'specialty' => $user->specialty,
-            'type' => $user->type,
+            'account_type' => $user->account_type,
             'response_hours' => $user->response_hours,
             'plan' => $user->subscriptionPlan?->name ?? 'Free Trial',
             'plan_price' => (int) ($user->subscriptionPlan?->price ?? 0),

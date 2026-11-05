@@ -2,43 +2,38 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Role;
-use App\Models\User;
-use App\Support\AdminPermissions;
+use App\Models\AdminUser;
+use App\Support\SpaSession;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Str;
 
 class AdminAuthController extends Controller
 {
     public function login(Request $request)
     {
+        SpaSession::requireSession($request);
+
         $credentials = $request->validate([
             'email' => ['required', 'email'],
             'password' => ['required', 'string'],
         ]);
 
-        $user = User::query()
+        $user = AdminUser::query()
+            ->with('role')
             ->where('email', $credentials['email'])
             ->first();
-        $role = $user ? Role::query()->where('slug', $user->role)->first() : null;
 
-        if (! $user || ! $role || ! Hash::check($credentials['password'], $user->password)) {
+        if (! $user || ! $user->role || ! Hash::check($credentials['password'], $user->password)) {
             return response()->json([
                 'message' => 'These credentials do not match our records.',
             ], 422);
         }
 
-        $plain = Str::random(64);
-        $user->forceFill([
-            'api_token' => hash('sha256', $plain),
-        ])->save();
-
-        $request->setUserResolver(static fn () => $user);
+        SpaSession::login($request, 'admin', $user);
+        $user->forceFill(['last_login_at' => now()])->save();
         AdminOverviewController::record($request, 'admin.login', $user->name.' signed in');
 
         return response()->json([
-            'token' => $plain,
             'user' => $this->profile($user),
         ]);
     }
@@ -52,21 +47,21 @@ class AdminAuthController extends Controller
 
     public function logout(Request $request)
     {
-        $request->user()?->forceFill(['api_token' => null])->save();
+        SpaSession::logout($request, 'admin');
 
         return response()->json(['ok' => true]);
     }
 
-    private function profile(User $user): array
+    private function profile(AdminUser $user): array
     {
-        $role = Role::query()->where('slug', $user->role)->first();
+        $role = $user->role;
 
         return [
             'name' => $user->name,
             'email' => $user->email,
-            'role' => $user->role,
-            'role_name' => $role?->name ?? 'Administrator',
-            'permissions' => $role?->granted() ?? AdminPermissions::keys(),
+            'role' => $role->slug,
+            'role_name' => $role->name,
+            'permissions' => $role->granted(),
         ];
     }
 }

@@ -12,10 +12,15 @@ class DatabaseSeeder extends Seeder
     public function run(): void
     {
         $this->call([
-            AdminUserSeeder::class,
             RoleSeeder::class,
+            AdminUserSeeder::class,
             SubscriptionPlanSeeder::class,
             ServiceInstructionSeeder::class,
         ]);
+
+        // Test accounts for every portal. Never seeded in production.
+        if (app()->environment(['local', 'testing'])) {
+            $this->call(LocalUserSeeder::class);
+        }
     }
 }

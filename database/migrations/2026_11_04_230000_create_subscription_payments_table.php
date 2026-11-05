@@ -19,6 +19,10 @@ return new class extends Migration
             $table->string('status')->default('pending');
             $table->timestamp('paid_at')->nullable();
             $table->timestamps();
+
+            // Paid totals: where status = 'paid' sum(amount).
+            $table->index(['status', 'amount']);
+            $table->index(['user_id', 'created_at']);
         });
     }
 

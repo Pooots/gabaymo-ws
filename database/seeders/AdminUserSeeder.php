@@ -2,9 +2,13 @@
 
 namespace Database\Seeders;
 
-use App\Models\User;
+use App\Models\AdminUser;
+use App\Models\Role;
 use Illuminate\Database\Seeder;
 
+/**
+ * The platform administrator (admin_users table). Runs after RoleSeeder.
+ */
 class AdminUserSeeder extends Seeder
 {
     public function run(): void
@@ -14,13 +18,14 @@ class AdminUserSeeder extends Seeder
             $password = '123Gabaymo$$$';
         }
 
-        User::query()->updateOrCreate(
+        $role = Role::query()->where('slug', 'admin')->firstOrFail();
+
+        AdminUser::query()->updateOrCreate(
             ['email' => env('ADMIN_EMAIL', 'admin@gabaymo.com')],
             [
                 'name' => env('ADMIN_NAME', 'GabayMo Admin'),
-                'role' => 'admin',
+                'role_id' => $role->id,
                 'password' => $password,
-                'email_verified_at' => now(),
             ],
         );
     }

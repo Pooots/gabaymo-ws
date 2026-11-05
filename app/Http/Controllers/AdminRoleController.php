@@ -2,8 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\AdminUser;
 use App\Models\Role;
-use App\Models\User;
 use App\Support\AdminPermissions;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -65,7 +65,7 @@ class AdminRoleController extends Controller
             ], 422);
         }
 
-        if (User::query()->where('role', $staffRole->slug)->exists()) {
+        if ($staffRole->accounts()->exists()) {
             return response()->json([
                 'message' => 'Move the accounts off this role before deleting it.',
             ], 422);
@@ -82,16 +82,15 @@ class AdminRoleController extends Controller
     {
         $data = $request->validate([
             'name' => ['required', 'string', 'max:80'],
-            'email' => ['required', 'email', 'max:120', 'unique:users,email'],
+            'email' => ['required', 'email', 'max:120', 'unique:admin_users,email'],
             'password' => ['required', 'string', 'min:8', 'max:120'],
         ]);
 
-        $user = User::query()->create([
+        $user = AdminUser::query()->create([
             'name' => $data['name'],
             'email' => $data['email'],
             'password' => $data['password'],
-            'role' => $staffRole->slug,
-            'email_verified_at' => now(),
+            'role_id' => $staffRole->id,
         ]);
 
         AdminOverviewController::record(
@@ -120,7 +119,7 @@ class AdminRoleController extends Controller
     private function uniqueSlug(string $name): string
     {
         $base = Str::slug($name);
-        if ($base === '' || $base === 'member') {
+        if ($base === '') {
             $base = 'role';
         }
 
@@ -136,8 +135,7 @@ class AdminRoleController extends Controller
 
     private function present(Role $role): array
     {
-        $accounts = User::query()
-            ->where('role', $role->slug)
+        $accounts = $role->accounts()
             ->orderBy('name')
             ->get(['id', 'name', 'email']);
 
@@ -148,7 +146,7 @@ class AdminRoleController extends Controller
             'description' => $role->description,
             'is_system' => $role->is_system,
             'permissions' => $role->granted(),
-            'accounts' => $accounts->map(fn (User $user) => [
+            'accounts' => $accounts->map(fn (AdminUser $user) => [
                 'id' => $user->id,
                 'name' => $user->name,
                 'email' => $user->email,

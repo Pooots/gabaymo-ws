@@ -16,6 +16,10 @@ return Application::configure(basePath: dirname(__DIR__))
         // Must run first so preflight OPTIONS and error responses get CORS headers
         // (needed for the Vite frontend → this API).
         $middleware->prepend(HandleCors::class);
+
+        // Sanctum SPA auth: requests from the domains in SANCTUM_STATEFUL_DOMAINS
+        // get encrypted session cookies + CSRF protection on /api routes.
+        $middleware->statefulApi();
         $middleware->alias([
             'admin' => \App\Http\Middleware\AuthenticateAdmin::class,
             'member' => \App\Http\Middleware\AuthenticateMember::class,

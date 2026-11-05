@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\AdminUser;
 use App\Models\AuditLog;
 use App\Models\KnowledgeDocument;
 use App\Models\SubscriptionPayment;
@@ -16,7 +17,7 @@ class AdminOverviewController extends Controller
     {
         $start = now()->subDays(13)->startOfDay();
         $counts = User::query()
-            ->where('role', 'member')
+            ->customers()
             ->where('created_at', '>=', $start)
             ->selectRaw('DATE(created_at) as day, COUNT(*) as total')
             ->groupBy('day')
@@ -33,8 +34,8 @@ class AdminOverviewController extends Controller
         }
 
         return response()->json([
-            'members' => User::query()->where('role', 'member')->count(),
-            'partners' => User::query()->where('type', 'partners')->count(),
+            'members' => User::query()->customers()->count(),
+            'partners' => User::query()->partners()->count(),
             'open_tickets' => SupportTicket::query()->where('status', 'open')->count(),
             'documents' => KnowledgeDocument::query()
                 ->where('active', true)
@@ -56,9 +57,10 @@ class AdminOverviewController extends Controller
 
     public static function record(Request $request, string $action, string $summary): void
     {
-        $user = $request->user();
+        $actor = $request->user();
         AuditLog::query()->create([
-            'user_id' => $user?->id,
+            'user_id' => $actor instanceof User ? $actor->id : null,
+            'admin_user_id' => $actor instanceof AdminUser ? $actor->id : null,
             'action' => $action,
             'summary' => $summary,
         ]);

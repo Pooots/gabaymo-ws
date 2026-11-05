@@ -36,9 +36,17 @@ return [
     */
 
     'guards' => [
+        // Customers and partners (gabaymo.com, partner.gabaymo.com).
         'web' => [
             'driver' => 'session',
             'provider' => 'users',
+        ],
+
+        // Staff (admin.gabaymo.com), stored in the admin_users table. A separate
+        // guard and table, so a customer/partner account can never act as staff.
+        'admin' => [
+            'driver' => 'session',
+            'provider' => 'admin_users',
         ],
     ],
 
@@ -63,6 +71,11 @@ return [
         'users' => [
             'driver' => 'eloquent',
             'model' => env('AUTH_MODEL', App\Models\User::class),
+        ],
+
+        'admin_users' => [
+            'driver' => 'eloquent',
+            'model' => App\Models\AdminUser::class,
         ],
 
         // 'users' => [

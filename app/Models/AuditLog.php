@@ -9,6 +9,7 @@ class AuditLog extends Model
 {
     protected $fillable = [
         'user_id',
+        'admin_user_id',
         'action',
         'summary',
     ];
@@ -16,5 +17,10 @@ class AuditLog extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function adminUser(): BelongsTo
+    {
+        return $this->belongsTo(AdminUser::class);
     }
 }

@@ -11,8 +11,7 @@ class AdminMemberController extends Controller
     public function index()
     {
         $members = User::query()
-            ->where('role', 'member')
-            ->where('type', 'Users')
+            ->customers()
             ->with('subscriptionPlan')
             ->latest()
             ->get()
@@ -79,7 +78,7 @@ class AdminMemberController extends Controller
 
     private function isMember(User $member): bool
     {
-        return $member->role === 'member' && $member->type === 'Users';
+        return $member->isCustomer();
     }
 
     private function present(User $user): array

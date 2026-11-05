@@ -12,7 +12,7 @@ class AdminPartnerController extends Controller
     {
         $openTickets = SupportTicket::query()->where('status', 'open')->count();
         $partners = User::query()
-            ->where('type', 'partners')
+            ->partners()
             ->latest()
             ->get()
             ->map(fn (User $user) => $this->present($user, $openTickets));
@@ -45,8 +45,7 @@ class AdminPartnerController extends Controller
             'mobile' => $this->mobile($data['mobile']),
             'specialty' => trim($data['specialty']),
             'password' => $data['password'],
-            'role' => 'partner',
-            'type' => 'partners',
+            'account_type' => User::PARTNER,
             'response_hours' => $data['response_hours'],
             'partner_status' => $data['partner_status'],
             'email_verified_at' => now(),

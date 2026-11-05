@@ -3,6 +3,7 @@
 namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Foundation\Auth\User as Authenticatable;
@@ -12,6 +13,12 @@ class User extends Authenticatable
 {
     /** @use HasFactory<\Database\Factories\UserFactory> */
     use HasFactory, Notifiable;
+
+    /** School accounts on gabaymo.com. */
+    public const CUSTOMER = 'customer';
+
+    /** Partner lawyers on partner.gabaymo.com. */
+    public const PARTNER = 'partner';
 
     /**
      * The attributes that are mass assignable.
@@ -27,8 +34,7 @@ class User extends Authenticatable
         'mobile',
         'region',
         'specialty',
-        'role',
-        'type',
+        'account_type',
         'response_hours',
         'partner_status',
         'subscription_plan_id',
@@ -44,7 +50,6 @@ class User extends Authenticatable
     protected $hidden = [
         'password',
         'remember_token',
-        'api_token',
     ];
 
     /**
@@ -65,5 +70,25 @@ class User extends Authenticatable
     public function subscriptionPlan(): BelongsTo
     {
         return $this->belongsTo(SubscriptionPlan::class);
+    }
+
+    public function isCustomer(): bool
+    {
+        return $this->account_type === self::CUSTOMER;
+    }
+
+    public function isPartner(): bool
+    {
+        return $this->account_type === self::PARTNER;
+    }
+
+    public function scopeCustomers(Builder $query): Builder
+    {
+        return $query->where('account_type', self::CUSTOMER);
+    }
+
+    public function scopePartners(Builder $query): Builder
+    {
+        return $query->where('account_type', self::PARTNER);
     }
 }

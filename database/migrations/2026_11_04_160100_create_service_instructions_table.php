@@ -15,6 +15,8 @@ return new class extends Migration
             $table->boolean('active')->default(true);
             $table->unsignedSmallInteger('sort_order')->default(0);
             $table->timestamps();
+
+            $table->index(['active', 'sort_order']);
         });
     }
 

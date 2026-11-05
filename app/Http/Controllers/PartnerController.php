@@ -7,6 +7,7 @@ use App\Models\ServiceInstruction;
 use App\Models\SupportTicket;
 use App\Models\TicketMessage;
 use App\Models\User;
+use App\Support\SpaSession;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -206,7 +207,7 @@ class PartnerController extends Controller
 
     public function logout(Request $request)
     {
-        $request->user()?->forceFill(['api_token' => null])->save();
+        SpaSession::logout($request, 'web');
 
         return response()->json(['ok' => true]);
     }
@@ -215,7 +216,7 @@ class PartnerController extends Controller
     {
         return SupportTicket::query()
             ->with('user.subscriptionPlan')
-            ->whereHas('user', fn ($query) => $query->where('role', 'member')->where('type', 'Users'));
+            ->whereHas('user', fn ($query) => $query->customers());
     }
 
     private function ownsAccepted(Request $request, SupportTicket $ticket): bool
@@ -259,7 +260,7 @@ class PartnerController extends Controller
             'created_at' => $message->created_at?->toIso8601String(),
             'mine' => (int) $message->user_id === (int) $request->user()->id,
             'sender_name' => $message->user?->name ?? 'Member',
-            'sender_role' => $message->user?->role ?? 'member',
+            'sender_role' => $message->user?->isPartner() ? 'partner' : 'member',
         ];
     }
 
@@ -272,7 +273,7 @@ class PartnerController extends Controller
             'email' => $user->email,
             'mobile' => $user->mobile,
             'specialty' => $user->specialty,
-            'type' => $user->type,
+            'account_type' => $user->account_type,
             'response_hours' => $user->response_hours,
             'partner_status' => $user->partner_status,
         ];

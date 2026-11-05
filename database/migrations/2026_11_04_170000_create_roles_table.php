@@ -16,6 +16,9 @@ return new class extends Migration
             $table->boolean('is_system')->default(false);
             $table->json('permissions');
             $table->timestamps();
+
+            // Role list: orderByDesc('is_system')->orderBy('name').
+            $table->index(['is_system', 'name']);
         });
     }
 

@@ -2,35 +2,29 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\AdminUser;
 use App\Models\Role;
-use App\Models\User;
 use Closure;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Symfony\Component\HttpFoundation\Response;
 
 class AuthenticateAdmin
 {
     public function handle(Request $request, Closure $next): Response
     {
-        $plain = $request->bearerToken();
-        $user = null;
+        // Staff session (admin_users table), separate from customers/partners.
+        $user = Auth::guard('admin')->user();
+        $role = $user instanceof AdminUser ? $user->role : null;
 
-        if (is_string($plain) && $plain !== '') {
-            $user = User::query()
-                ->where('api_token', hash('sha256', $plain))
-                ->first();
-        }
-
-        $role = $user ? Role::query()->where('slug', $user->role)->first() : null;
-
-        if (! $user || (! $role && $user->role !== 'admin')) {
+        if (! $role) {
             return response()->json([
                 'message' => 'Unauthenticated.',
                 'error' => 'Authentication required',
             ], 401);
         }
 
-        if ($role && ! $this->permitted($request, $role)) {
+        if (! $this->permitted($request, $role)) {
             return response()->json([
                 'message' => 'You do not have access to this module.',
             ], 403);

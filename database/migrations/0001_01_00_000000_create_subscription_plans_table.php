@@ -6,6 +6,9 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
+    /**
+     * Runs before the users table: users.subscription_plan_id references it.
+     */
     public function up(): void
     {
         Schema::create('subscription_plans', function (Blueprint $table) {
@@ -20,6 +23,9 @@ return new class extends Migration
             $table->boolean('active')->default(true);
             $table->unsignedSmallInteger('sort_order')->default(0);
             $table->timestamps();
+
+            // Active plans ordered by sort_order.
+            $table->index(['active', 'sort_order']);
         });
     }
 
