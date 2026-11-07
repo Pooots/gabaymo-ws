@@ -7,20 +7,16 @@ use Illuminate\Database\Seeder;
 class DatabaseSeeder extends Seeder
 {
     /**
-     * Seed the application's database.
+     * Reference data plus exactly one admin and one partner (no members).
+     * Every seeder is safe to run again.
      */
     public function run(): void
     {
         $this->call([
             RoleSeeder::class,
-            AdminUserSeeder::class,
             SubscriptionPlanSeeder::class,
             ServiceInstructionSeeder::class,
+            AccountSeeder::class,
         ]);
-
-        // Test accounts for every portal. Never seeded in production.
-        if (app()->environment(['local', 'testing'])) {
-            $this->call(LocalUserSeeder::class);
-        }
     }
 }

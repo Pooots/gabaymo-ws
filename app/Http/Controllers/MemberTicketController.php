@@ -4,10 +4,15 @@ namespace App\Http\Controllers;
 
 use App\Models\SupportTicket;
 use App\Models\TicketMessage;
+use App\Services\Notifications\NotificationService;
+use App\Support\PracticeAreas;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 class MemberTicketController extends Controller
 {
+    public function __construct(private readonly NotificationService $notifications) {}
+
     public function index(Request $request)
     {
         $tickets = SupportTicket::query()
@@ -32,6 +37,7 @@ class MemberTicketController extends Controller
         $data = $request->validate([
             'subject' => ['required', 'string', 'max:160'],
             'body' => ['required', 'string', 'max:4000'],
+            'practice_area' => ['nullable', 'string', Rule::in(PracticeAreas::KEYS)],
         ]);
 
         $ticket = SupportTicket::query()->create([
@@ -39,6 +45,7 @@ class MemberTicketController extends Controller
             'subject' => trim($data['subject']),
             'body' => trim($data['body']),
             'status' => 'open',
+            'practice_area' => $data['practice_area'] ?? null,
         ]);
 
         AdminOverviewController::record(
@@ -46,6 +53,8 @@ class MemberTicketController extends Controller
             'ticket.create',
             $request->user()->name.' submitted a ticket: '.$ticket->subject,
         );
+
+        $this->notifications->ticketCreated($ticket);
 
         return response()->json(['ticket' => $this->present($ticket)], 201);
     }
@@ -82,10 +91,35 @@ class MemberTicketController extends Controller
             'user_id' => $request->user()->id,
             'body' => trim($data['body']),
         ]);
+        // The partner now owes a reply (unless one is already due).
+        if ($ticket->reply_due_at === null) {
+            $ticket->forceFill([
+                'reply_due_at' => now()->addHours((int) config('services.tickets.reply_hours', 24)),
+                'overdue_notified_at' => null,
+            ])->save();
+        }
+
+        $this->notifications->ticketMessage($ticket, $message, $request->user());
 
         return response()->json([
             'message' => $this->presentMessage($request, $message->load('user')),
         ], 201);
+    }
+
+    public function close(Request $request, SupportTicket $ticket)
+    {
+        if (! $this->owns($request, $ticket)) {
+            return response()->json(['message' => 'This ticket was not found.'], 404);
+        }
+        if ($ticket->isClosed()) {
+            return response()->json(['ticket' => $this->present($ticket)]);
+        }
+
+        $ticket->forceFill(['status' => 'closed', 'closed_at' => now(), 'closed_by' => 'member', 'reply_due_at' => null])->save();
+        AdminOverviewController::record($request, 'ticket.close', $request->user()->name.' closed ticket #'.$ticket->id);
+        $this->notifications->ticketClosed($ticket, 'member');
+
+        return response()->json(['ticket' => $this->present($ticket->fresh())]);
     }
 
     private function owns(Request $request, SupportTicket $ticket): bool
@@ -122,7 +156,10 @@ class MemberTicketController extends Controller
             'subject' => $ticket->subject,
             'body' => $ticket->body,
             'status' => $ticket->status,
+            'practice_area' => $ticket->practice_area,
             'partner_name' => $ticket->partner_id ? 'Gabaymo Partner' : null,
+            'reply_due_at' => $ticket->reply_due_at?->toIso8601String(),
+            'closed_at' => $ticket->closed_at?->toIso8601String(),
             'created_at' => $ticket->created_at?->toIso8601String(),
         ];
     }

@@ -36,6 +36,7 @@ class PayMongoCheckout
         return [
             'id' => $id,
             'checkout_url' => $url,
+            'payment_intent_id' => $data['attributes']['payment_intent']['id'] ?? null,
         ];
     }
 
@@ -59,9 +60,11 @@ class PayMongoCheckout
             $status = 'failed';
         }
 
+        $paymentId = null;
         foreach ($attributes['payments'] ?? [] as $payment) {
             if (($payment['attributes']['status'] ?? null) === 'paid') {
                 $status = 'succeeded';
+                $paymentId = $payment['id'] ?? null;
                 break;
             }
         }
@@ -74,9 +77,16 @@ class PayMongoCheckout
             };
         }
 
+        $amount = 0;
+        foreach ($attributes['line_items'] ?? [] as $item) {
+            $amount += (int) ($item['amount'] ?? 0) * max(1, (int) ($item['quantity'] ?? 1));
+        }
+
         return [
             'status' => $status,
-            'amount_centavos' => (int) ($attributes['line_items'][0]['amount'] ?? 0),
+            'amount_centavos' => $amount,
+            'payment_id' => is_string($paymentId) ? $paymentId : null,
+            'payment_intent_id' => $attributes['payment_intent']['id'] ?? null,
         ];
     }
 

@@ -24,6 +24,8 @@ return Application::configure(basePath: dirname(__DIR__))
             'admin' => \App\Http\Middleware\AuthenticateAdmin::class,
             'member' => \App\Http\Middleware\AuthenticateMember::class,
             'partner' => \App\Http\Middleware\AuthenticatePartner::class,
+            'notifiable' => \App\Http\Middleware\AuthenticateMemberOrPartner::class,
+            'ai.service' => \App\Http\Middleware\VerifyAiServiceSignature::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

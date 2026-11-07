@@ -5,6 +5,9 @@ namespace App\Http\Controllers;
 use App\Models\ServiceInstruction;
 use Illuminate\Http\Request;
 
+/**
+ * LEGACY: service instructions now live in gabaymo-ai and are managed through AdminAiController (admin/ai/instructions*) and PartnerAiController. This table is kept for older admin/partner builds; do not add features here.
+ */
 class AdminInstructionController extends Controller
 {
     public function index()

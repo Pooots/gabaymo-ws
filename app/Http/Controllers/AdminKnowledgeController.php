@@ -6,6 +6,9 @@ use App\Models\KnowledgeDocument;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
+/**
+ * LEGACY: knowledge documents now live in gabaymo-ai and are managed through AdminAiController (admin/ai/knowledge/*). This text-only table is kept for older admin builds and for gabaymo:ai-import-legacy-knowledge; do not add features here.
+ */
 class AdminKnowledgeController extends Controller
 {
     public function index()

@@ -2,11 +2,14 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\StoresAppTimezone;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class TicketMessage extends Model
 {
+    use StoresAppTimezone;
+
     protected $fillable = [
         'support_ticket_id',
         'user_id',

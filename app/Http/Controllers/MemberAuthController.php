@@ -2,8 +2,13 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\SubscriptionPlan;
+use App\Models\AuditLog;
 use App\Models\User;
+use App\Services\Billing\CodeRedemption;
+use App\Services\Billing\SubscriptionService;
+use App\Services\Billing\TokenMeter;
+use App\Services\Billing\UsageHistory;
+use App\Support\MemberProfile;
 use App\Support\PhilippineRegions;
 use App\Support\SpaSession;
 use Illuminate\Http\Request;
@@ -13,7 +18,10 @@ use Illuminate\Validation\Rule;
 
 class MemberAuthController extends Controller
 {
-    public function register(Request $request)
+    /** Compared against when the email is unknown, so both paths take as long. */
+    private const DUMMY_HASH = '$2y$12$1HDDjy7Uf0K968YqjcZxmuB7EZCrGXsbAy62lfs6ekmpiXwvTYWsC';
+
+    public function register(Request $request, CodeRedemption $codes, SubscriptionService $subscriptions)
     {
         SpaSession::requireSession($request);
 
@@ -24,31 +32,52 @@ class MemberAuthController extends Controller
             'region' => ['required', 'string', Rule::in(PhilippineRegions::NAMES)],
             'email' => ['required', 'email', 'max:120', 'unique:users,email'],
             'password' => ['required', 'string', 'min:8', 'max:120', 'confirmed'],
+            'accept_terms' => ['accepted'],
+            'referral_code' => ['nullable', 'string', 'max:40'],
         ], [
             'mobile.regex' => 'Enter a Philippine mobile number, such as 09171234567.',
+            'accept_terms.accepted' => 'Please accept the Terms of Service and Privacy Policy.',
         ]);
 
-        $plan = SubscriptionPlan::query()
-            ->where('active', true)
-            ->where('price', 0)
-            ->orderBy('sort_order')
-            ->first();
+        $referral = null;
+        if (! empty($data['referral_code'])) {
+            $referral = $codes->findUsableReferral($data['referral_code']);
+            if (! $referral) {
+                return response()->json([
+                    'message' => 'This referral code is not valid.',
+                    'errors' => ['referral_code' => ['This referral code is not valid.']],
+                ], 422);
+            }
+        }
 
         $first = trim($data['first_name']);
         $last = trim($data['last_name']);
-        $user = User::query()->create([
+        $user = new User([
             'name' => trim($first.' '.$last),
             'first_name' => $first,
             'last_name' => $last,
-            'mobile' => $this->mobile($data['mobile']),
+            'mobile' => MemberProfile::mobile($data['mobile']),
             'region' => $data['region'],
-            'email' => $data['email'],
+            'email' => mb_strtolower($data['email']),
             'password' => $data['password'],
-            'account_type' => User::CUSTOMER,
-            'subscription_plan_id' => $plan?->id,
-            'tokens_remaining' => $plan?->tokens ?? 0,
-            'email_verified_at' => now(),
         ]);
+        $user->forceFill([
+            'account_type' => User::CUSTOMER,
+            'terms_accepted_at' => now(),
+            'privacy_consent_at' => now(),
+        ])->save();
+        app(TokenMeter::class)->startPlan($user, $subscriptions->freePlan());
+
+        if ($referral) {
+            $codes->applyReferral($user, $referral);
+        }
+        $subscriptions->claimInvites($user);
+
+        try {
+            $user->sendEmailVerificationNotification();
+        } catch (\Throwable $e) {
+            report($e);
+        }
 
         SpaSession::login($request, 'web', $user);
         AdminOverviewController::record(
@@ -59,7 +88,7 @@ class MemberAuthController extends Controller
 
         return response()->json([
             'portal' => SpaSession::portal($user),
-            'user' => $this->profile($user->load('subscriptionPlan')),
+            'user' => MemberProfile::present($user->fresh()),
         ], 201);
     }
 
@@ -74,26 +103,41 @@ class MemberAuthController extends Controller
 
         // Staff accounts live in admin_users, so they are never found here.
         $user = User::query()->where('email', $credentials['email'])->first();
-        $partner = $user && $user->isPartner();
-        $member = $user && $user->isCustomer();
+        // Check the password before anything about the account, and answer every
+        // failure the same way, so the response never reveals which emails exist.
+        $valid = Hash::check($credentials['password'], $user?->password ?? self::DUMMY_HASH);
+        $portal = $user && ! $user->isInvited() && ($user->isCustomer() || ($user->isPartner() && $user->partner_status === 'active'));
 
-        if ($partner && $user->partner_status !== 'active') {
-            return response()->json([
-                'message' => 'This partner account is not active.',
-            ], 422);
-        }
+        if (! $user || ! $valid || ! $portal) {
+            AuditLog::record(
+                'auth.login_failed',
+                'Failed sign-in for '.MemberProfile::maskEmail($credentials['email']).' from '.$request->ip(),
+                $user && $valid ? $user : null,
+            );
 
-        if ((! $partner && ! $member) || ! Hash::check($credentials['password'], $user->password)) {
             return response()->json([
                 'message' => 'These credentials do not match our records.',
             ], 422);
         }
 
+        if ($user->isSuspended()) {
+            AuditLog::record('auth.login_suspended', $user->name.' tried to sign in while suspended', $user);
+
+            return response()->json([
+                'message' => 'This account is suspended. Contact GabayMo support.',
+                'error' => 'account_suspended',
+            ], 403);
+        }
+
         SpaSession::login($request, 'web', $user);
+        AdminOverviewController::record($request, $user->isPartner() ? 'partner.login' : 'member.login', $user->name.' signed in');
+        if ($user->isCustomer()) {
+            $user = app(SubscriptionService::class)->refresh($user);
+        }
 
         return response()->json([
             'portal' => SpaSession::portal($user),
-            'user' => $this->profile($user->load('subscriptionPlan')),
+            'user' => MemberProfile::present($user),
         ]);
     }
 
@@ -105,7 +149,10 @@ class MemberAuthController extends Controller
     {
         $user = Auth::guard('web')->user();
         $active = $user instanceof User
-            && ($user->isCustomer() || ($user->isPartner() && $user->partner_status === 'active'));
+            && ($user->isCustomer() || ($user->isPartner() && $user->partner_status === 'active'))
+            && ! $user->isInvited()
+            && ! $user->isSuspended()
+            && SpaSession::isCurrent($request, 'web', $user);
 
         if (! $active) {
             return response()->json([
@@ -116,63 +163,54 @@ class MemberAuthController extends Controller
 
         return response()->json([
             'portal' => SpaSession::portal($user),
-            'user' => $this->profile($user->load('subscriptionPlan')),
+            'user' => MemberProfile::present($user),
         ]);
     }
 
     public function me(Request $request)
     {
+        $user = app(SubscriptionService::class)->refresh($request->user());
+
         return response()->json([
-            'user' => $this->profile($request->user()->load('subscriptionPlan')),
+            'user' => MemberProfile::present($user),
         ]);
     }
 
     public function update(Request $request)
     {
         $data = $request->validate([
-            'region' => ['required', 'string', Rule::in(PhilippineRegions::NAMES)],
+            'region' => ['sometimes', 'required', 'string', Rule::in(PhilippineRegions::NAMES)],
+            'issuance_alerts' => ['sometimes', 'boolean'],
         ]);
 
         $user = $request->user();
-        $user->forceFill(['region' => $data['region']])->save();
+        $changes = array_intersect_key($data, array_flip(['region', 'issuance_alerts']));
+        if ($changes !== []) {
+            $user->forceFill($changes)->save();
+            AdminOverviewController::record($request, 'member.profile', $user->name.' updated '.implode(', ', array_keys($changes)));
+        }
 
         return response()->json([
-            'user' => $this->profile($user->load('subscriptionPlan')),
+            'user' => MemberProfile::present($user->fresh()),
         ]);
     }
 
     public function logout(Request $request)
     {
+        AdminOverviewController::record($request, 'member.logout', $request->user()->name.' signed out');
         SpaSession::logout($request, 'web');
 
         return response()->json(['ok' => true]);
     }
 
-    private function profile(User $user): array
+    /** The member's usage meter and recent usage, in percent. */
+    public function usage(Request $request, TokenMeter $meter)
     {
-        return [
-            'name' => $user->name,
-            'first_name' => $user->first_name,
-            'last_name' => $user->last_name,
-            'email' => $user->email,
-            'mobile' => $user->mobile,
-            'region' => $user->region,
-            'specialty' => $user->specialty,
-            'account_type' => $user->account_type,
-            'response_hours' => $user->response_hours,
-            'plan' => $user->subscriptionPlan?->name ?? 'Free Trial',
-            'plan_price' => (int) ($user->subscriptionPlan?->price ?? 0),
-            'tokens_remaining' => $user->tokens_remaining,
-        ];
-    }
+        $user = $request->user()->loadMissing('subscriptionPlan');
 
-    private function mobile(string $value): string
-    {
-        $digits = preg_replace('/\D+/', '', $value) ?? '';
-        if (str_starts_with($digits, '63')) {
-            return '0'.substr($digits, 2);
-        }
-
-        return $digits;
+        return response()->json([
+            'usage' => $meter->snapshot($user),
+            'events' => UsageHistory::for($user),
+        ]);
     }
 }

@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use App\Models\User;
+use App\Support\AccountGate;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -16,10 +17,11 @@ class AuthenticateMember
         $user = Auth::guard('web')->user();
 
         if (! $user instanceof User || ! $user->isCustomer()) {
-            return response()->json([
-                'message' => 'Unauthenticated.',
-                'error' => 'Authentication required',
-            ], 401);
+            return AccountGate::unauthenticated();
+        }
+
+        if ($rejected = AccountGate::reject($request, 'web', $user)) {
+            return $rejected;
         }
 
         $request->setUserResolver(static fn () => $user);

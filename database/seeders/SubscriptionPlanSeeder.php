@@ -14,10 +14,12 @@ class SubscriptionPlanSeeder extends Seeder
                 'name' => 'Free Trial',
                 'price' => 0,
                 'cadence' => 'forever',
-                'tokens' => 20,
+                // ~20 typical questions, once.
+                'token_allowance' => 200_000,
+                'allowance_period' => 'once',
                 'summary' => 'Try the assistant with full citations on a small set of questions.',
                 'specs' => [
-                    '20 trial questions',
+                    'Trial usage for about 20 questions',
                     'Full citation cards with page numbers',
                     'Knowledge library search',
                     'No partner lawyer support',
@@ -30,13 +32,15 @@ class SubscriptionPlanSeeder extends Seeder
                 'name' => 'Monthly Membership',
                 'price' => 499,
                 'cadence' => 'month',
-                'tokens' => 300,
+                // ~300 typical questions a month.
+                'token_allowance' => 3_000_000,
+                'allowance_period' => 'month',
                 'summary' => 'For school heads who consult policies week to week.',
                 'specs' => [
-                    '300 questions every month',
+                    'Usage for about 300 questions, refreshed monthly',
                     'Citation cards with page numbers',
                     'Partner lawyer support tickets',
-                    'Token wallet and full history',
+                    'Usage meter and full history',
                 ],
                 'featured' => false,
                 'active' => true,
@@ -46,10 +50,12 @@ class SubscriptionPlanSeeder extends Seeder
                 'name' => 'Yearly Membership',
                 'price' => 4990,
                 'cadence' => 'year',
-                'tokens' => 3600,
+                // Billed yearly, refreshed monthly (~360 questions a month).
+                'token_allowance' => 3_600_000,
+                'allowance_period' => 'month',
                 'summary' => 'Twelve months of membership for the price of ten.',
                 'specs' => [
-                    '3,600 questions per year',
+                    '20% more monthly usage than Monthly',
                     'Two months free',
                     'Priority partner lawyer support',
                     'Everything in Monthly',

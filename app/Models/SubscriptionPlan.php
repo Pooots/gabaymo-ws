@@ -2,15 +2,19 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\StoresAppTimezone;
 use Illuminate\Database\Eloquent\Model;
 
 class SubscriptionPlan extends Model
 {
+    use StoresAppTimezone;
+
     protected $fillable = [
         'name',
         'price',
         'cadence',
-        'tokens',
+        'token_allowance',
+        'allowance_period',
         'summary',
         'specs',
         'featured',
@@ -22,7 +26,7 @@ class SubscriptionPlan extends Model
     {
         return [
             'price' => 'integer',
-            'tokens' => 'integer',
+            'token_allowance' => 'integer',
             'specs' => 'array',
             'featured' => 'boolean',
             'active' => 'boolean',
@@ -37,6 +41,26 @@ class SubscriptionPlan extends Model
             'year' => 'per year',
             default => 'forever',
         };
+    }
+
+    public function refreshesMonthly(): bool
+    {
+        return $this->allowance_period === 'month';
+    }
+
+    /** Rough number of typical questions the allowance covers, for plan copy only. */
+    public function estimatedQuestions(): int
+    {
+        return intdiv((int) $this->token_allowance, max(1, (int) config('services.usage.tokens_per_question', 10000)));
+    }
+
+    public function allowanceLabel(): string
+    {
+        $questions = number_format($this->estimatedQuestions());
+
+        return $this->refreshesMonthly()
+            ? "About {$questions} questions of usage each month"
+            : "About {$questions} questions of usage";
     }
 
     public function priceLabel(): string

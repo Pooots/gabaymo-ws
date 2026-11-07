@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use App\Models\User;
+use App\Support\AccountGate;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -20,10 +21,11 @@ class AuthenticatePartner
             || ! $user->isPartner()
             || $user->partner_status !== 'active'
         ) {
-            return response()->json([
-                'message' => 'Unauthenticated.',
-                'error' => 'Authentication required',
-            ], 401);
+            return AccountGate::unauthenticated();
+        }
+
+        if ($rejected = AccountGate::reject($request, 'web', $user)) {
+            return $rejected;
         }
 
         $request->setUserResolver(static fn () => $user);

@@ -190,7 +190,7 @@ class SpaAuthTest extends TestCase
 
     private function member(): User
     {
-        return User::query()->create([
+        return User::query()->forceCreate([
             'name' => 'Maria Santos',
             'email' => 'member@test.ph',
             'password' => 'secret123',
@@ -200,7 +200,7 @@ class SpaAuthTest extends TestCase
 
     private function partner(): User
     {
-        return User::query()->create([
+        return User::query()->forceCreate([
             'name' => 'Atty. Reyes',
             'email' => 'partner@test.ph',
             'password' => 'secret123',
@@ -213,7 +213,7 @@ class SpaAuthTest extends TestCase
     {
         $role = Role::query()->create(['name' => 'Support', 'slug' => 'support', 'permissions' => ['overview']]);
 
-        return AdminUser::query()->create([
+        return AdminUser::query()->forceCreate([
             'name' => 'Staff One',
             'email' => 'staff@test.ph',
             'password' => 'secret123',

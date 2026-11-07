@@ -12,6 +12,7 @@ class AdminPermissions
         ['group' => 'Operations', 'key' => 'tickets', 'label' => 'Tickets'],
         ['group' => 'Operations', 'key' => 'access-keys', 'label' => 'Access keys'],
         ['group' => 'Operations', 'key' => 'referral-codes', 'label' => 'Referral codes'],
+        ['group' => 'Operations', 'key' => 'organizations', 'label' => 'Organizations (group plans)'],
         ['group' => 'Operations', 'key' => 'plans', 'label' => 'Plans & tokens'],
         ['group' => 'Operations', 'key' => 'subscriptions', 'label' => 'Subscriptions'],
         ['group' => 'Operations', 'key' => 'payments', 'label' => 'Payments'],
@@ -21,6 +22,8 @@ class AdminPermissions
         ['group' => 'Knowledge & AI', 'key' => 'knowledge-search', 'label' => 'Knowledge Search'],
         ['group' => 'Knowledge & AI', 'key' => 'service-instructions', 'label' => 'Service Instructions'],
         ['group' => 'Knowledge & AI', 'key' => 'ai-review', 'label' => 'AI Review Queue'],
+        ['group' => 'Knowledge & AI', 'key' => 'feedback', 'label' => 'Answer feedback'],
+        ['group' => 'Knowledge & AI', 'key' => 'analytics', 'label' => 'AI analytics'],
     ];
 
     public static function keys(): array

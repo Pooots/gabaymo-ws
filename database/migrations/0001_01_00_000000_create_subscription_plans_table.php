@@ -7,7 +7,10 @@ use Illuminate\Support\Facades\Schema;
 return new class extends Migration
 {
     /**
-     * Runs before the users table: users.subscription_plan_id references it.
+     * Runs before organizations and users: both reference it.
+     *
+     * Plans carry a weighted-token allowance per usage period (monthly for
+     * paid plans, once for the free trial).
      */
     public function up(): void
     {
@@ -16,7 +19,9 @@ return new class extends Migration
             $table->string('name');
             $table->unsignedInteger('price')->default(0);
             $table->string('cadence', 20);
-            $table->unsignedInteger('tokens')->default(0);
+            $table->unsignedBigInteger('token_allowance')->default(0);
+            // month: refreshes every month (yearly plans too) | once: never refreshes.
+            $table->string('allowance_period', 10)->default('month');
             $table->string('summary');
             $table->json('specs');
             $table->boolean('featured')->default(false);
@@ -24,7 +29,7 @@ return new class extends Migration
             $table->unsignedSmallInteger('sort_order')->default(0);
             $table->timestamps();
 
-            // Active plans ordered by sort_order.
+            // Catalog / overview / free-plan lookup: where active orderBy sort_order.
             $table->index(['active', 'sort_order']);
         });
     }

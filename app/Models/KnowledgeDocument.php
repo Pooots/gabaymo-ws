@@ -2,10 +2,13 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\StoresAppTimezone;
 use Illuminate\Database\Eloquent\Model;
 
 class KnowledgeDocument extends Model
 {
+    use StoresAppTimezone;
+
     public const CATEGORIES = [
         'MOOE and Liquidation',
         'Procurement and Bidding',

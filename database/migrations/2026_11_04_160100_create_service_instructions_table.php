@@ -10,7 +10,7 @@ return new class extends Migration
     {
         Schema::create('service_instructions', function (Blueprint $table) {
             $table->id();
-            $table->string('title');
+            $table->string('title')->index();
             $table->text('body');
             $table->boolean('active')->default(true);
             $table->unsignedSmallInteger('sort_order')->default(0);

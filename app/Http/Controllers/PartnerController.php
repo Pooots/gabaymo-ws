@@ -7,12 +7,20 @@ use App\Models\ServiceInstruction;
 use App\Models\SupportTicket;
 use App\Models\TicketMessage;
 use App\Models\User;
+use App\Services\Notifications\NotificationService;
+use App\Support\Paginates;
+use App\Support\PracticeAreas;
 use App\Support\SpaSession;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 
 class PartnerController extends Controller
 {
+    use Paginates;
+
+    public function __construct(private readonly NotificationService $notifications) {}
+
     public function me(Request $request)
     {
         return response()->json(['partner' => $this->present($request->user())]);
@@ -26,7 +34,9 @@ class PartnerController extends Controller
 
         return response()->json([
             'partner' => $this->present($request->user()),
-            'open_tickets' => SupportTicket::query()->where('status', 'open')->whereNull('partner_id')->count(),
+            'open_tickets' => $this->forAreas(SupportTicket::query()->where('status', 'open')->whereNull('partner_id'), $request->user())->count(),
+            'overdue_tickets' => SupportTicket::query()->where('partner_id', $request->user()->id)->where('status', 'accepted')
+                ->whereNotNull('reply_due_at')->where('reply_due_at', '<', now())->count(),
             'instructions' => ServiceInstruction::query()
                 ->where('active', true)
                 ->orderBy('sort_order')
@@ -85,33 +95,29 @@ class PartnerController extends Controller
         ]);
     }
 
-    public function tickets()
+    /** Open, unassigned tickets in the partner's practice areas (or without an area). */
+    public function tickets(Request $request)
     {
-        return response()->json([
-            'tickets' => $this->ticketQuery()
-                ->where('status', 'open')
-                ->whereNull('partner_id')
-                ->latest()
-                ->get()
-                ->map(fn (SupportTicket $ticket) => $this->presentTicket($ticket)),
-        ]);
+        $query = $this->forAreas($this->ticketQuery()->where('status', 'open')->whereNull('partner_id'), $request->user())->latest();
+        $this->search($request, $query, ['subject']);
+
+        return response()->json($this->paginate($request, $query, fn (SupportTicket $ticket) => $this->presentTicket($ticket), 'tickets'));
     }
 
     public function accepted(Request $request)
     {
-        return response()->json([
-            'tickets' => $this->ticketQuery()
-                ->where('partner_id', $request->user()->id)
-                ->where('status', 'accepted')
-                ->latest('accepted_at')
-                ->get()
-                ->map(fn (SupportTicket $ticket) => $this->presentTicket($ticket)),
-        ]);
+        $query = $this->ticketQuery()
+            ->where('partner_id', $request->user()->id)
+            ->where('status', 'accepted')
+            ->latest('accepted_at');
+        $this->search($request, $query, ['subject']);
+
+        return response()->json($this->paginate($request, $query, fn (SupportTicket $ticket) => $this->presentTicket($ticket), 'tickets'));
     }
 
     public function accept(Request $request, SupportTicket $ticket)
     {
-        if (! $this->ticketQuery()->whereKey($ticket->id)->exists()) {
+        if (! $this->ticketQuery()->whereKey($ticket->id)->exists() || ! NotificationService::partnerTakes($request->user(), $ticket->practice_area)) {
             return response()->json(['message' => 'This ticket was not found.'], 404);
         }
 
@@ -129,6 +135,8 @@ class PartnerController extends Controller
                 'partner_id' => $request->user()->id,
                 'status' => 'accepted',
                 'accepted_at' => now(),
+                'reply_due_at' => now()->addHours((int) config('services.tickets.reply_hours', 24)),
+                'overdue_notified_at' => null,
             ])->save();
         });
 
@@ -138,8 +146,12 @@ class PartnerController extends Controller
             ], 422);
         }
 
+        $accepted = $ticket->fresh('user.subscriptionPlan');
+        AdminOverviewController::record($request, 'ticket.accept', $request->user()->name.' accepted ticket #'.$accepted->id);
+        $this->notifications->ticketAccepted($accepted);
+
         return response()->json([
-            'ticket' => $this->presentTicket($ticket->fresh('user.subscriptionPlan')),
+            'ticket' => $this->presentTicket($accepted),
         ]);
     }
 
@@ -169,8 +181,25 @@ class PartnerController extends Controller
             'user_id' => $request->user()->id,
             'body' => trim($data['body']),
         ]);
+        // Replied: nothing is due until the member writes again.
+        $ticket->forceFill(['reply_due_at' => null, 'overdue_notified_at' => null])->save();
+
+        $this->notifications->ticketMessage($ticket, $message, $request->user());
 
         return response()->json(['message' => $this->presentMessage($request, $message->load('user'))], 201);
+    }
+
+    public function close(Request $request, SupportTicket $ticket)
+    {
+        if (! $this->ownsAccepted($request, $ticket)) {
+            return response()->json(['message' => 'This ticket is not in your accepted list.'], 403);
+        }
+
+        $ticket->forceFill(['status' => 'closed', 'closed_at' => now(), 'closed_by' => 'partner', 'reply_due_at' => null])->save();
+        AdminOverviewController::record($request, 'ticket.close', $request->user()->name.' closed ticket #'.$ticket->id);
+        $this->notifications->ticketClosed($ticket, 'partner');
+
+        return response()->json(['ticket' => $this->presentTicket($ticket->fresh('user.subscriptionPlan'))]);
     }
 
     public function update(Request $request)
@@ -181,6 +210,11 @@ class PartnerController extends Controller
             'mobile' => ['required', 'string', 'regex:/^(?:09\d{9}|\+639\d{9}|639\d{9})$/'],
             'specialty' => ['required', 'string', 'max:160'],
             'response_hours' => ['required', 'integer', 'min:1', 'max:168'],
+            'practice_areas' => ['sometimes', 'array'],
+            'practice_areas.*' => ['string', Rule::in(PracticeAreas::KEYS)],
+            'title' => ['sometimes', 'nullable', 'string', 'max:120'],
+            'bio' => ['sometimes', 'nullable', 'string', 'max:2000'],
+            'photo_url' => ['sometimes', 'nullable', 'url:http,https', 'max:2048'],
         ], [
             'mobile.regex' => 'Enter a Philippine mobile number, such as 09171234567.',
         ]);
@@ -200,13 +234,20 @@ class PartnerController extends Controller
             'mobile' => $digits,
             'specialty' => trim($data['specialty']),
             'response_hours' => $data['response_hours'],
+            ...(array_key_exists('practice_areas', $data) ? ['practice_areas' => array_values(array_unique($data['practice_areas']))] : []),
+            ...collect(['title', 'bio', 'photo_url'])
+                ->filter(fn (string $field) => array_key_exists($field, $data))
+                ->mapWithKeys(fn (string $field) => [$field => trim((string) $data[$field]) !== '' ? trim((string) $data[$field]) : null])
+                ->all(),
         ])->save();
+        AdminOverviewController::record($request, 'partner.profile', $user->name.' updated their profile');
 
         return response()->json(['partner' => $this->present($user->fresh())]);
     }
 
     public function logout(Request $request)
     {
+        AdminOverviewController::record($request, 'partner.logout', $request->user()->name.' signed out');
         SpaSession::logout($request, 'web');
 
         return response()->json(['ok' => true]);
@@ -217,6 +258,16 @@ class PartnerController extends Controller
         return SupportTicket::query()
             ->with('user.subscriptionPlan')
             ->whereHas('user', fn ($query) => $query->customers());
+    }
+
+    private function forAreas($query, User $partner)
+    {
+        $areas = array_values(array_filter((array) ($partner->practice_areas ?? [])));
+        if ($areas === []) {
+            return $query;
+        }
+
+        return $query->where(fn ($q) => $q->whereNull('practice_area')->orWhereIn('practice_area', $areas));
     }
 
     private function ownsAccepted(Request $request, SupportTicket $ticket): bool
@@ -233,6 +284,10 @@ class PartnerController extends Controller
             'subject' => $ticket->subject,
             'body' => $ticket->body,
             'status' => $ticket->status,
+            'practice_area' => $ticket->practice_area,
+            'reply_due_at' => $ticket->reply_due_at?->toIso8601String(),
+            'overdue' => $ticket->isOverdue(),
+            'closed_at' => $ticket->closed_at?->toIso8601String(),
             'created_at' => $ticket->created_at?->toIso8601String(),
             'accepted_at' => $ticket->accepted_at?->toIso8601String(),
             'member_name' => $member?->name ?? 'Member',
@@ -276,6 +331,10 @@ class PartnerController extends Controller
             'account_type' => $user->account_type,
             'response_hours' => $user->response_hours,
             'partner_status' => $user->partner_status,
+            'practice_areas' => array_values((array) ($user->practice_areas ?? [])),
+            'title' => $user->title,
+            'bio' => $user->bio,
+            'photo_url' => $user->photo_url,
         ];
     }
 }

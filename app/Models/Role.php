@@ -2,12 +2,15 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\StoresAppTimezone;
 use App\Support\AdminPermissions;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Role extends Model
 {
+    use StoresAppTimezone;
+
     protected $fillable = [
         'name',
         'slug',

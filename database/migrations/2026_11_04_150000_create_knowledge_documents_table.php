@@ -10,11 +10,11 @@ return new class extends Migration
     {
         Schema::create('knowledge_documents', function (Blueprint $table) {
             $table->id();
-            $table->string('title');
+            $table->string('title')->index();
             $table->string('category')->index();
-            $table->string('kind', 40);
-            $table->string('reference')->nullable();
-            $table->string('summary', 400);
+            $table->string('kind', 40)->index();
+            $table->string('reference')->nullable()->index();
+            $table->string('summary', 400)->index();
             $table->longText('content');
             $table->boolean('active')->default(true);
             $table->string('source_status', 20)->default('pending');

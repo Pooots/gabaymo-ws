@@ -40,11 +40,45 @@ class SpaSession
 
         // Prevent session fixation.
         $request->session()->regenerate();
+        // Remember which "session generation" this sign-in belongs to (see isCurrent()).
+        $request->session()->put(self::versionKey($guard), (int) $user->session_version);
         $request->setUserResolver(static fn () => $user);
+    }
+
+    /**
+     * False when the account was signed out everywhere (logout-all, password
+     * change or reset, suspension) after this session signed in.
+     */
+    public static function isCurrent(Request $request, string $guard, User|AdminUser $user): bool
+    {
+        $stored = $request->hasSession() ? $request->session()->get(self::versionKey($guard)) : null;
+
+        return (int) ($stored ?? 0) === (int) $user->session_version;
+    }
+
+    /** Invalidate every session of the account; optionally keep the current one signed in. */
+    public static function revokeAll(Request $request, string $guard, User|AdminUser $user, bool $keepCurrent = false): void
+    {
+        $user->forceFill(['session_version' => (int) $user->session_version + 1])->save();
+
+        if ($keepCurrent && $request->hasSession()) {
+            $request->session()->put(self::versionKey($guard), (int) $user->session_version);
+        }
+    }
+
+    private static function versionKey(string $guard): string
+    {
+        return 'auth_version_'.$guard;
     }
 
     public static function logout(Request $request, string $guard): void
     {
+        if (! $request->hasSession()) {
+            Auth::guard($guard)->forgetUser();
+
+            return;
+        }
+
         Auth::guard($guard)->logout();
 
         $request->session()->regenerate(true);
