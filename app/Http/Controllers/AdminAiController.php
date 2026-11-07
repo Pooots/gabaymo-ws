@@ -85,8 +85,14 @@ class AdminAiController extends Controller
                     'file' => ['required', 'file', 'max:'.((int) config('services.gabaymo_ai.upload_max_mb', 30) * 1024), 'extensions:pdf,docx,txt,md,markdown'],
                     'metadata' => [$isNewDocument ? 'required' : 'nullable', 'string', 'max:20000'],
                     'note' => ['nullable', 'string', 'max:1000'],
+                    // "Approve when ready" (JSON); gabaymo-ai checks the self-approval scope.
+                    'auto_approve' => ['nullable', 'string', 'max:4000'],
                 ]);
-                $fields = array_filter(['metadata' => $request->input('metadata'), 'note' => $request->input('note')], fn ($v) => $v !== null && $v !== '');
+                $fields = array_filter([
+                    'metadata' => $request->input('metadata'),
+                    'note' => $request->input('note'),
+                    'auto_approve' => $request->input('auto_approve'),
+                ], fn ($v) => $v !== null && $v !== '');
                 $response = $this->ai->upload($aiPath, $context, $request->file('file'), $fields, $key);
             } else {
                 $timeout = $path === 'knowledge/answer' ? (int) config('services.gabaymo_ai.answer_timeout', 120) : null;

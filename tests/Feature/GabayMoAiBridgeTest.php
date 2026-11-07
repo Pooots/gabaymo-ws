@@ -267,4 +267,31 @@ class GabayMoAiBridgeTest extends TestCase
         $this->signedInternal('/api/v1/internal/ai/handoff-tickets', $body, ['tickets.create'])->assertOk();
         $this->assertSame(1, SupportTicket::query()->where('ai_question_id', $body['question_id'])->count());
     }
+
+    public function test_upload_forwards_approve_on_upload_with_the_administrator_scope(): void
+    {
+        Http::fake(['ai.test/*' => Http::response(['data' => ['id' => '9b2f7a3e-1111-4c4c-8888-000000000001']], 201)]);
+        $administrator = $this->admin(['knowledge-library', 'source-review'], system: true);
+        $autoApprove = json_encode(['source_authenticity_checked' => true, 'applicability_verified' => true]);
+
+        $this->actingAs($administrator, 'admin')->post('/api/v1/admin/ai/knowledge/documents', [
+            'file' => \Illuminate\Http\UploadedFile::fake()->createWithContent('memo.txt', 'TEST FIXTURE'),
+            'metadata' => json_encode(['title' => 'Memo', 'document_type' => 'deped_memorandum']),
+            'auto_approve' => $autoApprove,
+        ], ['Accept' => 'application/json', 'Idempotency-Key' => 'upload-key-0001'])->assertCreated();
+
+        Http::assertSent(function (HttpRequest $request) use ($autoApprove) {
+            // Uploads are signed over a multipart digest (covered elsewhere); check the context it carries.
+            $context = Sig::decodeContext($request->header(Sig::H_CONTEXT)[0]);
+            $this->assertContains('knowledge.review', $context['scopes']);
+            $this->assertContains('knowledge.self_approval_exception', $context['scopes']);
+            $this->assertStringContainsString('name="auto_approve"', $request->body());
+            $this->assertStringContainsString($autoApprove, $request->body());
+
+            return str_ends_with(parse_url($request->url(), PHP_URL_PATH), '/api/v1/knowledge/documents');
+        });
+
+        $this->actingAs($administrator, 'admin')->getJson('/api/v1/admin/me')->assertOk()->assertJsonPath('user.can_self_approve', true);
+        $this->actingAs($this->admin(['knowledge-library']), 'admin')->getJson('/api/v1/admin/me')->assertOk()->assertJsonPath('user.can_self_approve', false);
+    }
 }

@@ -276,6 +276,8 @@ class AdminAuthController extends Controller
             'role' => $role->slug,
             'role_name' => $role->name,
             'permissions' => $role->granted(),
+            // Administrator role only: may approve their own uploads (recorded as an exception).
+            'can_self_approve' => (bool) $role->is_system,
             'two_factor_enabled' => $user->hasTwoFactor(),
         ];
     }
